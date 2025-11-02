@@ -1,0 +1,43 @@
+# === Global Ignore Rules ===
+.env
+*.log
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+
+# === Python / Django ===
+venv/
+env/
+*.egg-info/
+staticfiles/
+media/
+*.pot
+*.py[cod]
+*.mo
+
+# Django local settings
+local_settings.py
+
+# === Node / React / Vite ===
+node_modules/
+dist/
+build/
+.cache/
+*.local
+.vscode/
+.DS_Store
+
+# === Environment Files ===
+.env
+.env.local
+.env.development
+.env.production
+
+# === OS / Editor ===
+Thumbs.db
+.idea/
+*.swp
+*.swo
