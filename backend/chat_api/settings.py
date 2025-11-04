@@ -100,11 +100,20 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # --- CORS Configuration ---
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = False
+
+CORS_ALLOWED_ORIGINS = [
+    "https://obscure-space-giggle-vjwxwwq9vvvhjqj-5173.app.github.dev",
+    "https://5173-obscure-space-giggle-vjwxwwq9vvvhjqj.app.github.dev",
+]
+
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https://.*\.app\.github\.dev$",
+]
+
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_METHODS = ["DELETE", "GET", "OPTIONS", "PATCH", "POST", "PUT"]
 CORS_ALLOW_HEADERS = ["*"]
-
 # --- AI Configuration (OpenAI + LM Studio fallback) ---
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 LM_STUDIO_URL = os.getenv("LM_STUDIO_URL", "http://localhost:1234/v1/chat/completions")

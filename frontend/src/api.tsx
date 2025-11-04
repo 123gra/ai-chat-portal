@@ -1,4 +1,3 @@
-// api.ts
 export interface Message {
   id?: number;
   sender: "user" | "ai";
@@ -50,9 +49,9 @@ export async function getConversations(): Promise<Conversation[]> {
 }
 
 // Get a specific conversation
-export async function getConversation(convId: number): Promise<Conversation> {
-  const res = await fetch(`${BASE}/${convId}/`);
-  if (!res.ok) throw new Error("Failed to fetch conversation");
+export async function getConversationMessages(convId: number) {
+  const res = await fetch(`${BASE}/${convId}/messages/`);
+  if (!res.ok) throw new Error("Failed to fetch messages");
   return res.json();
 }
 
@@ -74,7 +73,7 @@ export async function getStatus(): Promise<string> {
   return data.status || "Unknown";
 }
 
-// ✅ Get dashboard analytics (mapped fields)
+// Get dashboard analytics (mapped fields)
 export async function getDashboard() {
   const res = await fetch(`${BASE}/dashboard/`);
   if (!res.ok) throw new Error("Failed to fetch dashboard data");
@@ -89,3 +88,14 @@ export async function getDashboard() {
     local_llm: data.using_local_llm || false,
   };
 }
+// Search conversations
+export async function searchConversations(query: string) {
+  const res = await fetch(`${BASE}/search/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query }),
+  });
+  if (!res.ok) throw new Error("Failed to perform search");
+  return res.json();
+}
+

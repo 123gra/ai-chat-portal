@@ -10,15 +10,16 @@ from .ai_service import AIService
 
 ai = AIService()
 
-
-# --- Conversation Management --- #
+# ----------------------------------------------------------------------
+# CONVERSATION MANAGEMENT
+# ----------------------------------------------------------------------
 
 @api_view(['POST'])
 def create_conversation(request):
-    """Create a new conversation (and mark others ended)."""
+    """Create a new conversation and close any active ones."""
     title = request.data.get('title', 'New Conversation')
 
-    # Mark previous actives as ended
+    # Mark existing active convos as ended
     Conversation.objects.filter(status='active').update(
         status='ended', ended_at=timezone.now()
     )
@@ -42,46 +43,41 @@ def create_conversation(request):
 
 @api_view(['POST'])
 def send_message(request, conv_id):
-    """Handle user message, AI response, and state updates."""
+    """Handle user → AI message exchange."""
     convo = get_object_or_404(Conversation, id=conv_id)
     content = request.data.get('content', '').strip()
 
     if not content:
-        return Response({"error": "Message content cannot be empty."}, status=400)
+        return Response({"error": "Message cannot be empty."}, status=400)
 
+    # Save user message
     user_msg = Message.objects.create(conversation=convo, sender='user', content=content)
 
     try:
         ai_response = ai.chat_with_context(convo, content)
-
-        # Detect if AI mode switched mid-conversation
-        current_mode = getattr(settings, "AI_MODE", "unknown")
-        if convo.metadata.get("ai_mode") != current_mode:
-            convo.metadata["ai_mode"] = current_mode
-            convo.metadata["switched_at"] = timezone.now().isoformat()
-
         ai_msg = Message.objects.create(conversation=convo, sender='ai', content=ai_response)
+
         convo.status = "active"
-        convo.save()
+        convo.save(update_fields=["status"])
 
         return Response({
             "user": MessageSerializer(user_msg).data,
-            "ai": MessageSerializer(ai_msg).data
+            "ai": MessageSerializer(ai_msg).data,
+            "conversation_id": convo.id,
         })
-
     except Exception as e:
-        convo.status = 'error'
+        convo.status = "error"
         convo.metadata.update({
             "error": str(e),
             "failed_at": timezone.now().isoformat()
         })
-        convo.save()
-        return Response({"error": "AI backend failed", "details": str(e)}, status=500)
+        convo.save(update_fields=["status", "metadata"])
+        return Response({"error": str(e)}, status=500)
 
 
 @api_view(['POST'])
 def end_conversation(request, conv_id):
-    """Manually end a conversation (called by frontend or auto-end)."""
+    """End a conversation and generate AI summary."""
     convo = get_object_or_404(Conversation, id=conv_id)
 
     if convo.status != 'ended':
@@ -92,24 +88,29 @@ def end_conversation(request, conv_id):
             "ended_at": convo.ended_at.isoformat()
         })
 
-        # Optional: Generate AI summary if desired
         try:
-            summary = ai.summarize_conversation(convo)
-            convo.ai_summary = summary
-        except Exception:
+            summary_data = ai.summarize_conversation(convo)
+            convo.ai_summary = summary_data.get("summary", "")
+            convo.metadata["sentiment"] = summary_data.get("sentiment", "neutral")
+            convo.metadata["keywords"] = summary_data.get("keywords", [])
+        except Exception as e:
             convo.ai_summary = "Summary unavailable due to AI error."
+            convo.metadata["summary_error"] = str(e)
 
-        convo.save()
+        convo.save(update_fields=["status", "ended_at", "ai_summary", "metadata"])
 
     return Response({
         "status": convo.status,
         "ended_at": convo.ended_at,
-        "summary": convo.ai_summary
+        "summary": convo.ai_summary,
+        "sentiment": convo.metadata.get("sentiment", "unknown"),
+        "keywords": convo.metadata.get("keywords", [])
     })
 
 
 @api_view(['GET'])
 def get_conversations(request):
+    """List all conversations."""
     convos = Conversation.objects.all().order_by('-started_at')
     serializer = ConversationSerializer(convos, many=True)
     return Response(serializer.data)
@@ -117,16 +118,20 @@ def get_conversations(request):
 
 @api_view(['GET'])
 def get_conversation(request, conv_id):
+    """Get all messages of a specific conversation (for chat reload)."""
     convo = get_object_or_404(Conversation, id=conv_id)
-    serializer = ConversationSerializer(convo)
-    return Response(serializer.data)
+    convo_data = ConversationSerializer(convo).data
+    messages = Message.objects.filter(conversation=convo).order_by('created_at')
+    convo_data["messages"] = MessageSerializer(messages, many=True).data
+    return Response(convo_data)
 
 
 @api_view(['GET'])
 def dashboard_stats(request):
-    total_conversations = Conversation.objects.count()
-    active_conversations = Conversation.objects.filter(status='active').count()
-    ended_conversations = Conversation.objects.filter(status='ended').count()
+    """Dashboard analytics for UI."""
+    total = Conversation.objects.count()
+    active = Conversation.objects.filter(status='active').count()
+    ended = Conversation.objects.filter(status='ended').count()
 
     avg_duration = (
         Conversation.objects
@@ -135,21 +140,25 @@ def dashboard_stats(request):
         .aggregate(Avg('duration'))['duration__avg']
     )
 
-    latest = Conversation.objects.order_by('-started_at')[:5]
-    latest_data = ConversationSerializer(latest, many=True).data
+    recent = Conversation.objects.order_by('-started_at')[:5]
+    serializer = ConversationSerializer(recent, many=True)
 
     return Response({
-        "total": total_conversations,
-        "active": active_conversations,
-        "ended": ended_conversations,
+        "total": total,
+        "active": active,
+        "ended": ended,
         "avg_duration_mins": round(avg_duration.total_seconds() / 60, 2) if avg_duration else 0,
-        "recent": latest_data
+        "recent": serializer.data
     })
 
 
+# ----------------------------------------------------------------------
+# SYSTEM & INTELLIGENCE ENDPOINTS
+# ----------------------------------------------------------------------
+
 @api_view(["GET"])
 def system_status(request):
-    """Check backend configuration for OpenAI or LM Studio."""
+    """Show system configuration and status."""
     data = {
         "status": "ok",
         "ai_mode": getattr(settings, "AI_MODE", "unknown"),
@@ -158,3 +167,25 @@ def system_status(request):
         "debug": settings.DEBUG,
     }
     return Response(data)
+
+
+@api_view(["POST"])
+def search_conversations(request):
+    """Semantic search endpoint."""
+    query = request.data.get("query", "").strip()
+    if not query:
+        return Response({"error": "Query cannot be empty"}, status=400)
+
+    try:
+        results = ai.semantic_search(query)
+        return Response({"results": results})
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
+
+@api_view(['GET'])
+def get_messages(request, conv_id):
+    convo = get_object_or_404(Conversation, id=conv_id)
+    messages = Message.objects.filter(conversation=convo).order_by('created_at')
+    serializer = MessageSerializer(messages, many=True)
+    return Response(serializer.data)
+

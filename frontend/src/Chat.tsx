@@ -1,20 +1,44 @@
-// src/Chat.tsx
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { sendMessage, endConversation } from "./api";
+import axios from "axios";
 
 interface ChatProps {
   convId: number;
   onEnd: () => void;
 }
 
+interface Message {
+  sender: string;
+  content: string;
+}
+
 const Chat: React.FC<ChatProps> = ({ convId, onEnd }) => {
-  const [messages, setMessages] = useState<{ sender: string; content: string }[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [ended, setEnded] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const fetchMessages = async () => {
+      try {
+        const res = await axios.get(`/api/chat/${convId}/messages/`);
+        setMessages(res.data);
+      } catch (err) {
+        console.error("Error loading conversation:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    if (convId) fetchMessages();
+  }, [convId]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   const handleSend = async () => {
     if (!input.trim() || ended) return;
-
     try {
       const response = await sendMessage(convId, input);
       setMessages((prev) => [
@@ -34,39 +58,69 @@ const Chat: React.FC<ChatProps> = ({ convId, onEnd }) => {
       alert(`Conversation ended. Summary: ${result.summary}`);
       setEnded(true);
       onEnd();
+      window.location.href = "/";
     } catch (err) {
       console.error("Error ending conversation:", err);
     }
   };
 
-  return (
-    <div>
-      <h2>Conversation #{convId}</h2>
+  if (loading) {
+    return (
+      <div className="text-gray-400 text-center p-6 animate-pulse">
+        Loading chat...
+      </div>
+    );
+  }
 
-      <div style={{ border: "1px solid #ccc", padding: "1rem", minHeight: "200px" }}>
-        {messages.map((msg, i) => (
-          <p key={i}>
-            <b>{msg.sender}:</b> {msg.content}
-          </p>
-        ))}
-        {ended && <p style={{ color: "gray" }}> This conversation has ended.</p>}
+  return (
+    <div className="chat-container">
+      <div className="chat-header">
+        <h2>Conversation #{convId}</h2>
       </div>
 
-      <div style={{ marginTop: "1rem" }}>
+      <div className="chat-box">
+        {messages.map((msg, i) => (
+          <div
+            key={i}
+            className={`chat-row ${
+              msg.sender === "user" ? "chat-row-user" : "chat-row-ai"
+            }`}
+          >
+            <div
+              className={`chat-bubble ${
+                msg.sender === "user" ? "chat-user" : "chat-ai"
+              }`}
+            >
+              <span className="chat-sender">
+                {msg.sender === "user" ? "user:" : "ai:"}
+              </span>
+              <p className="chat-content">{msg.content}</p>
+            </div>
+          </div>
+        ))}
+        {ended && (
+          <p className="chat-ended italic text-gray-400">
+            This conversation has ended.
+          </p>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      <div className="chat-input-area">
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Type a message..."
           disabled={ended}
-          style={{ width: "60%", marginRight: "10px" }}
+          onKeyDown={(e) => e.key === "Enter" && handleSend()}
         />
         <button onClick={handleSend} disabled={ended}>
           Send
         </button>
         <button
+          className="end-btn"
           onClick={handleEndConversation}
           disabled={ended}
-          style={{ marginLeft: "10px", backgroundColor: "#f44336", color: "white" }}
         >
           End Chat
         </button>

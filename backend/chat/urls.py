@@ -10,5 +10,7 @@ urlpatterns = [
     path('dashboard/', views.dashboard_stats),
     path('status/', views.system_status),
     path('conversations/<int:conv_id>/end/', views.end_conversation),
- 
-]
+    path('search/', views.search_conversations),   
+    path('<int:conv_id>/messages/', views.get_messages),   
+   
+   ]
