@@ -1,0 +1,15 @@
+[
+    {
+        "conversation_id": 1,
+        "messages": [
+            {
+                "sender": "user",
+                "content": "Hello!"
+            },
+            {
+                "sender": "ai",
+                "content": "Hi! How can I help you today?"
+            }
+        ]
+    }
+]
